@@ -19,6 +19,10 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "KAJPLATS remote - UI bring-up build");
 
+    /* Before anything else: the radio is useless until the XIAO's RF switch
+     * is powered. */
+    board_init();
+
     /* A missing OLED must not be fatal. During bring-up the board is often
      * flashed before anything is soldered to it, and panicking there costs a
      * reboot loop and hides the keypad, which is testable on its own. */

@@ -29,4 +29,8 @@ void keypad_init(void);
  * KEYPAD_SCAN_MS. */
 key_t keypad_scan(void);
 
+/* Raw matrix position of the last detected press, for checking that your
+ * keypad's ribbon order matches KEYPAD_ROW_PINS / KEYPAD_COL_PINS. */
+void keypad_last_position(int *row, int *col);
+
 #define KEYPAD_SCAN_MS 20

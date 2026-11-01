@@ -63,26 +63,69 @@ clear, device type `0x010C Color Temperature Light`. They have no hue.
 The WHITE axis becomes a hue axis unchanged if a colour-capable (CWS) bulb is
 ever added; only the mapping differs.
 
-## Pin assignment
+## Pin assignment — Seeed XIAO ESP32C6
 
-ADC1 is GPIO0–6 on the C6, and GPIO0–7 are LP/RTC-capable so they can wake the
-chip from deep sleep. GPIO4, 5, 8, 9 and 15 are strapping pins and GPIO12/13
-are USB — all avoided.
+The XIAO breaks out eleven GPIOs and reserves three more on the board:
 
-| Pin | Use | Notes |
+| GPIO | Reserved for |
+|---|---|
+| 3 | **RF switch enable, active low** |
+| 14 | Antenna select (low = onboard ceramic, high = external U.FL) |
+| 15 | User LED |
+
+GPIO3 matters more than it looks. It has no pull on the board, so firmware
+that never touches it leaves the RF switch unpowered and the antenna
+effectively disconnected — the radio then works across a desk and nowhere
+else, which presents as a flaky mesh rather than as a pin mistake.
+`board_init()` drives GPIO3 and GPIO14 low before anything uses the radio.
+
+Header mapping, for cross-checking against the silkscreen:
+
+```
+D0=0  D1=1  D2=2  D3=21  D4=22(SDA)  D5=23(SCL)
+D6=16 D7=17 D8=19 D9=20  D10=18
+```
+
+| Pin | Header | Use |
 |---|---|---|
-| GPIO0–3 | Keypad rows | Read with internal pull-ups; LP-capable, so any row going low can wake the chip |
-| GPIO5–7 | Keypad columns | Open-drain, driven low one at a time |
-| GPIO10 | I²C SDA | OLED |
-| GPIO11 | I²C SCL | OLED |
+| GPIO0 | D0 | Keypad row — keys `1 2 3` |
+| GPIO1 | D1 | Keypad row — keys `4 5 6` |
+| GPIO2 | D2 | Keypad row — keys `* 0 #` |
+| GPIO21 | D3 | Keypad row — keys `7 8 9` |
+| GPIO22 | D4 | I²C SDA |
+| GPIO23 | D5 | I²C SCL |
+| GPIO16 | D6 | Keypad column — `1 4 7 *` |
+| GPIO17 | D7 | Keypad column — `2 5 8 0` |
+| GPIO19 | D8 | Keypad column — `3 6 9 #` |
 
-The matrix needs 7 pins and only 8 LP pins exist, so one strapping pin
-(GPIO5) is unavoidable. It is safe in practice: at reset the columns are
-high-Z and the row pull-ups are not yet enabled, so a key held during
-power-on cannot assert a level on it.
+### Why the rows are wired out of order
 
-The GME12864-13 is a 4-pin I²C SSD1306-class 128×64 panel: `GND VCC SCL SDA`,
-address usually `0x3C`.
+Deep-sleep wake needs LP/RTC-capable pins — GPIO0–7 on the C6 — and the XIAO
+exposes only GPIO0, GPIO1 and GPIO2 of those. Three of the four keypad rows
+can wake the chip; the fourth cannot.
+
+So the `* 0 #` row goes to a wake-capable pin and `7 8 9` takes the one that
+cannot. A remote whose power key will not wake it is a poor remote; losing
+wake on 7/8/9 is a much smaller cost. **Wire the pad's third and fourth rows
+swapped**, and confirm with the diagnostic below.
+
+For full coverage on all twelve keys, feed the four row lines into one spare
+LP pin through signal diodes (cathodes to the rows) and wake on that. Four
+diodes, only worth it if missing 7/8/9 turns out to annoy.
+
+### Checking your wiring
+
+Keypad ribbons differ between manufacturers, so every press logs where it
+landed in the matrix before the layout table turns it into a character:
+
+```
+keypad: press at row 0 (GPIO0), col 0 (GPIO16) -> '1'
+```
+
+Press the key marked `1`: it should report row 0, col 0. If not, reorder
+`KEYPAD_ROW_PINS` / `KEYPAD_COL_PINS` in `board.h` rather than rewiring. If a
+press reports nothing at all, rows and columns are swapped — any 4 of the 7
+ribbon pins are the rows.
 
 ## Power
 
@@ -110,11 +153,14 @@ Budget, assuming 20 uses/day at 10 s:
 ### Things that destroy this
 
 * **A stock dev board's power LED** draws ~2 mA on its own: 48 mAh/day, nine
-  days, and all the sleep work is wasted. Desolder it or use a bare module.
+  days, and all the sleep work is wasted. The XIAO is much better behaved
+  here — Seeed quote ~15 µA in deep sleep for the whole board — which is a
+  large part of why it suits this job.
 * **Wiring the cell to 3V3 directly.** A full LiPo is 4.2 V; the C6's maximum
-  is 3.6 V. Use a low-quiescent LDO (ME6211-class, ~1 µA) — not one with a
-  50 µA quiescent, which would cost more than the radio.
-* Charging needs a TP4056-class module with protection.
+  is 3.6 V. The XIAO solves this on the board: it has battery pads with
+  charging and regulation built in, so the cell connects there, not to 3V3.
+* Battery voltage is readable on A0 (GPIO0) through a 1:2 divider — but GPIO0
+  is a keypad row here, so battery monitoring would need rethinking.
 
 ## Interaction
 
@@ -154,8 +200,8 @@ discards out-of-range writes rather than complaining.
 
 ## Build order
 
-1. Second C6 (or an H2 — no WiFi radio, so lower idle draw for a Thread-only
-   device), bare module or power LED removed.
+1. ~~Second board.~~ **Done** — a Seeed XIAO ESP32C6: built-in battery
+   charging, ~15 µA deep sleep, and small enough to hold.
 2. Clone `esp-matter`; start from its `light_switch` example. 4 MB flash is the
    bare minimum, so use a custom partition table with OTA disabled.
 3. ~~Bring up OLED + keypad on USB power; get the UI right before touching
