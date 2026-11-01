@@ -219,6 +219,12 @@ uv run python tools/ot_console.py      # drives an ESP OpenThread CLI over USB
 bash tools/preflight.sh                # host readiness for Thread + Matter
 ```
 
+## Handheld remote
+
+A battery-powered ESP32-C6 remote with an OLED and two knobs, talking to the
+bulbs directly over Thread with no hub in the path — design, pin assignment
+and power budget in [docs/remote.md](docs/remote.md).
+
 ## Licence
 
 MIT — see [LICENSE](LICENSE).
