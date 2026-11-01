@@ -1,0 +1,22 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Node (matter-server is installed here, not vendored)
+node_modules/
+package-lock.json
+
+# ESP-IDF build output and generated config. sdkconfig is generated from the
+# sdkconfig.defaults* files and contains Wi-Fi credentials once configured.
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
+
+# Local Wi-Fi credentials for the border-router firmware build.
+sdkconfig.defaults.wifi
+
+# Scratch
+*.log

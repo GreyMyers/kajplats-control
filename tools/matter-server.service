@@ -1,0 +1,50 @@
+# Matter controller for the kajplats app.
+#
+# Runs as the normal user but with the two capabilities noble needs to drive
+# the Bluetooth adapter. Without them the adapter never leaves state
+# "unknown", BLE scanning never starts, and commissioning fails with the
+# misleading "No commissionable device was discovered" - the bulb was never
+# actually looked for.
+#
+# Granting the capability here rather than with
+#   setcap cap_net_raw+eip /usr/bin/node
+# keeps it scoped to this one process instead of handing raw-network access to
+# every node program on the system, and it survives node package upgrades,
+# which silently strip file capabilities.
+#
+# Install as /etc/systemd/system/matter-server.service
+#
+# Paths and User= below are for a checkout at /home/grey/kajplats. Adjust both
+# if yours lives elsewhere, or use tools/pi-setup.sh, which generates this
+# file with the right values for whatever host it runs on.
+
+[Unit]
+Description=Matter Server (kajplats)
+Documentation=https://github.com/matter-js/matterjs-server
+After=network-online.target bluetooth.service otbr-agent.service
+Wants=network-online.target
+# Commissioning a Thread device needs the border router up to join it to the
+# mesh once BLE has handed over the credentials.
+After=otbr-agent.service
+
+[Service]
+Type=simple
+User=grey
+Group=grey
+WorkingDirectory=/home/grey/kajplats
+ExecStart=/usr/bin/node /home/grey/kajplats/node_modules/matter-server/dist/esm/bin.js \
+    --storage-path /home/grey/.local/share/matter-server \
+    --bluetooth-adapter 0 \
+    --listen-address 127.0.0.1 \
+    --log-level info
+
+# CAP_NET_RAW  - send raw HCI commands to the adapter
+# CAP_NET_ADMIN - HCIDEVUP/HCIDEVDOWN ioctls during adapter setup
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

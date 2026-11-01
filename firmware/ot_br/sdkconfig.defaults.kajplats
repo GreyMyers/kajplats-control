@@ -1,0 +1,22 @@
+# Single-SoC border router on ESP32-C6: Wi-Fi and 802.15.4 on one chip.
+CONFIG_OPENTHREAD_RADIO_NATIVE=y
+CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
+
+# Expose the OpenThread CLI over the C6's built-in USB port. Without
+# CONSOLE_ENABLE the CLI is compiled out entirely and the port stays silent;
+# without the USB console type it lands on UART0 GPIO pins, which needs a
+# separate serial adapter. We want one USB cable for setup.
+CONFIG_OPENTHREAD_CONSOLE_ENABLE=y
+CONFIG_OPENTHREAD_CONSOLE_TYPE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# Bring up Wi-Fi and Thread automatically at boot. Without this the device
+# comes up idle and needs a console to start Thread by hand - fatal for
+# something running headless off a wall charger.
+CONFIG_OPENTHREAD_NETWORK_AUTO_START=y
+
+# Auto-start and the interactive `ot wifi` command are mutually exclusive:
+# ot_examples_br.c has an #error guard for exactly this pair. With auto-start
+# the credentials come from CONFIG_EXAMPLE_WIFI_* at build time instead, which
+# live in the gitignored sdkconfig.defaults.wifi.
+CONFIG_OPENTHREAD_CLI_WIFI=n

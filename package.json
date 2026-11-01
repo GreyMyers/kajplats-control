@@ -1,0 +1,15 @@
+{
+  "name": "kajplats-matter",
+  "private": true,
+  "description": "Matter controller for the kajplats app (see README step 4)",
+  "dependencies": {
+    "matter-server": "^1.5.5"
+  },
+  "allowScripts": {
+    "@stoprocent/noble@2.8.0": true,
+    "@stoprocent/bluetooth-hci-socket@2.3.0": true,
+    "@stoprocent/bleno@0.13.1": true,
+    "@serialport/bindings-cpp@12.0.1": true,
+    "usb@2.19.1": true
+  }
+}
