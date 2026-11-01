@@ -34,12 +34,9 @@
 #define PIN_ANTENNA_SEL    14   /* LOW = onboard ceramic antenna */
 #define PIN_USER_LED       15
 
-/* --- display: the XIAO's default I2C pads -------------------------------- */
-#define PIN_I2C_SDA        22   /* D4 */
-#define PIN_I2C_SCL        23   /* D5 */
-#define OLED_I2C_ADDR      0x3C
-#define OLED_WIDTH         128
-#define OLED_HEIGHT        64
+/* No display: D4/D5 (GPIO22/23) are free. The user LED is the only feedback
+ * channel, so the key map below is built to need as little of it as
+ * possible. */
 
 /* --- keypad: 4x3 matrix --------------------------------------------------
  * Columns are driven low one at a time; rows are read with pull-ups.

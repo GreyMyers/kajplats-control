@@ -1,30 +1,24 @@
 #include "ui.h"
 
-#include <stdio.h>
-
 #include "board.h"
-#include "display.h"
 #include "esp_log.h"
+#include "led.h"
 #include "lights.h"
 
 static const char *TAG = "ui";
 
 #define STEPS 9
 
-typedef enum { AXIS_BRIGHT = 0, AXIS_WHITE } axis_t;
-
 static struct {
     bool on;
     uint8_t level;
     uint16_t mireds;
     light_target_t target;
-    axis_t axis;
-    int bright_step;   /* 1..9, or 0 when the current value matches no step */
-    int white_step;
+    int shift_ms_left;      /* >0 while `#` has armed the white-temperature shift */
 } s;
 
 /* Nine evenly spaced stops on each axis. Brightness starts at 1/9 rather
- * than zero so key 1 is "dim", not "off" - turning the light off is what the
+ * than zero so key 1 is "dim", not "off" - turning the bulbs off is what the
  * dedicated * key is for. */
 static uint8_t step_to_level(int step)
 {
@@ -33,8 +27,8 @@ static uint8_t step_to_level(int step)
 
 static uint16_t step_to_mireds(int step)
 {
-    /* Warm on 1, cool on 9: mireds run the other way to kelvin, so this
-     * counts down from MIREDS_MAX. */
+    /* Warm on 1, cool on 9. Mireds run opposite to kelvin, so this counts
+     * down from the warm end. */
     int span = MIREDS_MAX - MIREDS_MIN;
     return (uint16_t)(MIREDS_MAX - (span * (step - 1)) / (STEPS - 1));
 }
@@ -42,14 +36,21 @@ static uint16_t step_to_mireds(int step)
 void ui_init(void)
 {
     s.on = true;
-    s.bright_step = STEPS;
-    s.white_step = 3;
-    s.level = step_to_level(s.bright_step);
-    s.mireds = step_to_mireds(s.white_step);
+    s.level = step_to_level(STEPS);
+    s.mireds = step_to_mireds(3);
     s.target = TARGET_BOTH;
-    s.axis = AXIS_BRIGHT;
+    s.shift_ms_left = 0;
     ESP_LOGI(TAG, "ready: target=%s level=%u mireds=%u",
              light_target_name(s.target), s.level, s.mireds);
+    ESP_LOGI(TAG, "keys: 1-9 brightness | # then 1-9 white | * power | 0 target");
+}
+
+static void disarm_shift(void)
+{
+    if (s.shift_ms_left > 0) {
+        s.shift_ms_left = 0;
+        led_set(false);
+    }
 }
 
 void ui_handle_key(key_t key)
@@ -59,16 +60,30 @@ void ui_handle_key(key_t key)
             return;
 
         case KEY_STAR:
+            disarm_shift();
             s.on = !s.on;
             lights_set_power(s.target, s.on);
-            break;
-
-        case KEY_HASH:
-            s.axis = (s.axis == AXIS_BRIGHT) ? AXIS_WHITE : AXIS_BRIGHT;
+            /* One blink for on, two for off - enough to tell them apart
+             * without needing to see the bulbs, which may be in another room. */
+            led_blink(s.on ? 1 : 2);
             break;
 
         case KEY_0:
+            disarm_shift();
             s.target = (light_target_t)((s.target + 1) % TARGET_COUNT);
+            /* Blink the target back: 1 = bulb 1, 2 = bulb 2, 3 = both. This
+             * is the only state the user cannot otherwise observe. */
+            led_blink((int)s.target + 1);
+            ESP_LOGI(TAG, "target -> %s", light_target_name(s.target));
+            break;
+
+        case KEY_HASH:
+            /* Momentary shift. Pressing it again while armed just restarts
+             * the timer, which is harmless and matches what a user expects
+             * from a key that does not visibly latch. */
+            s.shift_ms_left = UI_SHIFT_TIMEOUT_MS;
+            led_set(true);
+            ESP_LOGI(TAG, "white shift armed (%d ms)", UI_SHIFT_TIMEOUT_MS);
             break;
 
         default: {
@@ -76,68 +91,31 @@ void ui_handle_key(key_t key)
             if (step < 1 || step > STEPS) {
                 return;
             }
-            if (s.axis == AXIS_BRIGHT) {
-                s.bright_step = step;
-                s.level = step_to_level(step);
-                /* MoveToLevelWithOnOff wakes a bulb that was off, so reflect
-                 * that rather than showing a stale OFF. */
-                s.on = true;
-                lights_set_level(s.target, s.level);
-            } else {
-                s.white_step = step;
+            if (s.shift_ms_left > 0) {
+                disarm_shift();
                 s.mireds = step_to_mireds(step);
                 lights_set_mireds(s.target, s.mireds);
+            } else {
+                s.level = step_to_level(step);
+                /* MoveToLevelWithOnOff wakes a bulb that was off, so track
+                 * that rather than reporting a stale off state. */
+                s.on = true;
+                lights_set_level(s.target, s.level);
             }
             break;
         }
     }
 }
 
-void ui_render(void)
+void ui_tick(void)
 {
-    char buf[24];
-
-    display_clear();
-
-    /* Header: which bulbs, and whether they are on. */
-    display_text(0, 0, light_target_name(s.target));
-    const char *power = s.on ? "ON" : "OFF";
-    int px = OLED_WIDTH - (int)(DISPLAY_ADVANCE * 3);
-    if (s.on) {
-        display_text_inverted(px, 0, power);
-    } else {
-        display_text(px, 0, power);
+    if (s.shift_ms_left > 0) {
+        s.shift_ms_left -= KEYPAD_SCAN_MS;
+        if (s.shift_ms_left <= 0) {
+            s.shift_ms_left = 0;
+            led_set(false);
+            ESP_LOGI(TAG, "white shift expired");
+        }
     }
-    display_hline(0, 8, OLED_WIDTH, true);
-
-    /* Brightness row. The active axis is inverted so it is obvious which one
-     * the number keys will act on. */
-    unsigned percent = (s.level - LEVEL_MIN) * 100u / (LEVEL_MAX - LEVEL_MIN);
-    snprintf(buf, sizeof(buf), "BRIGHT");
-    if (s.axis == AXIS_BRIGHT) {
-        display_text_inverted(0, 12, buf);
-    } else {
-        display_text(0, 12, buf);
-    }
-    snprintf(buf, sizeof(buf), "%3u%%", percent);
-    display_text(OLED_WIDTH - (int)(DISPLAY_ADVANCE * 4), 12, buf);
-    display_bar(0, 21, OLED_WIDTH, 9, s.bright_step, STEPS, -1);
-
-    /* White row. */
-    snprintf(buf, sizeof(buf), "WHITE");
-    if (s.axis == AXIS_WHITE) {
-        display_text_inverted(0, 33, buf);
-    } else {
-        display_text(0, 33, buf);
-    }
-    snprintf(buf, sizeof(buf), "%4uK", mireds_to_kelvin(s.mireds));
-    display_text(OLED_WIDTH - (int)(DISPLAY_ADVANCE * 5), 33, buf);
-    display_bar(0, 42, OLED_WIDTH, 9, s.white_step, STEPS, -1);
-
-    /* Footer hint. y=54 so its 7 rows end at 60: at y=58 the bottom row
-     * would fall outside the 64 px panel and be silently clipped. */
-    display_text(0, 54, s.axis == AXIS_BRIGHT ? "#WHITE *PWR 0TGT"
-                                              : "#BRIGHT *PWR 0TGT");
-
-    display_flush();
+    led_tick(KEYPAD_SCAN_MS);
 }

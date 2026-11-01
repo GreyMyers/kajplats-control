@@ -1,6 +1,6 @@
 # Handheld remote — design
 
-A battery-powered ESP32-C6 with an OLED and a 12-key pad that controls the
+A battery-powered Seeed XIAO ESP32C6 with a 12-key pad that controls the
 KAJPLATS bulbs **directly over Thread**, with no hub, no laptop and no border
 router in the path.
 
@@ -29,25 +29,33 @@ board.
 
 ## Controls
 
-A 12-key pad is 4x3 — `1-9`, `*`, `0`, `#`. There is no A-D row; that is a
-16-key 4x4 part. Nine keys therefore have to serve two continuous controls,
-so `#` switches which axis they act on and the screen shows which is live.
+There is no display, which rules out modal controls: an earlier draft used
+`#` to flip between a brightness mode and a white mode, which is fine with a
+screen telling you which is live and unusable without one, because every
+press becomes a guess.
+
+So brightness — by far the most-used control — is unconditional, and white
+temperature sits behind a momentary shift that announces itself on the LED
+and times out on its own after 3 s:
 
 | Key | Action |
 |---|---|
-| `1`-`9` | Nine steps on the active axis |
-| `#` | Switch axis: BRIGHT ↔ WHITE |
-| `*` | Toggle power |
-| `0` | Cycle target: BULB 1 → BULB 2 → BOTH |
+| `1`-`9` | Brightness, 11% to 100% — always, no mode |
+| `#` then `1`-`9` | White temperature, 2202 K to 6535 K (LED lit while armed) |
+| `*` | Toggle power — 1 blink on, 2 blinks off |
+| `0` | Cycle target BULB 1 → BULB 2 → BOTH — blinked back 1/2/3 |
 
-| Key | BRIGHT | WHITE |
+| Key | Brightness | White (after `#`) |
 |---|---|---|
-| 1 | level 29 (11%) | 2202 K |
-| 5 | level 141 (55%) | 3289 K |
-| 9 | level 254 (100%) | 6535 K |
+| 1 | 11% | 2202 K |
+| 5 | 55% | 3289 K |
+| 9 | 100% | 6535 K |
 
-Key 1 is deliberately dim rather than off — turning the bulbs off is what `*`
-is for.
+Key 1 is deliberately dim rather than off — `*` is for off.
+
+The shift is momentary rather than sticky precisely so forgetting about it
+cannot strand the remote in a state you cannot see. The target is the only
+state with no other observable signal, which is why `0` blinks it back.
 
 ## What the axes do
 

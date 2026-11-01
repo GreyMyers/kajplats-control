@@ -1,0 +1,12 @@
+# Default settings for otbr-agent. Sourced by systemd.
+#
+# The radio is addressed by its stable by-id path, not /dev/ttyACM0. Device
+# numbering is assigned in plug order, so with two ESP32 boards attached the
+# RCP and the handheld remote swap numbers depending on which was plugged in
+# first - and otbr-agent would happily try to speak Spinel to the remote.
+# The by-id path contains the board's MAC and never moves.
+OTBR_RADIO_URL="spinel+hdlc+uart:///dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_9C:CC:01:18:69:F0-if00"
+
+# The backbone interface is chosen at start time by /usr/local/bin/otbr-start,
+# so it survives moving between Ethernet and Wi-Fi.
+OTBR_NO_AUTO_ATTACH=0
