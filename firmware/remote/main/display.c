@@ -21,6 +21,8 @@ static const char *TAG = "display";
 
 static uint8_t s_fb[OLED_WIDTH * PAGES];
 static esp_lcd_panel_handle_t s_panel;
+static i2c_master_bus_handle_t s_bus;
+static bool s_ready;
 
 /* Classic 5x7 glyphs, five column bytes each, covering ASCII 0x20..0x5F.
  * Stopping at 0x5F keeps the table small and is enough for a remote whose UI
@@ -63,8 +65,32 @@ static const uint8_t FONT[][5] = {
 #define FONT_FIRST 0x20
 #define FONT_LAST  0x5F
 
+bool display_ready(void)
+{
+    return s_ready;
+}
+
+/* esp_lcd logs two ERROR lines every time a probe finds nothing on the bus.
+ * While we are deliberately probing for a panel that may not be wired yet
+ * that is noise, not news, and at a 2 s retry it buries everything else. */
+static void quiet_lcd_logs(bool quiet)
+{
+    esp_log_level_t level = quiet ? ESP_LOG_NONE : ESP_LOG_INFO;
+    esp_log_level_set("lcd_panel.io.i2c", level);
+    esp_log_level_set("lcd_panel.ssd1306", level);
+}
+
 esp_err_t display_init(void)
 {
+    if (s_ready) {
+        return ESP_OK;
+    }
+    /* The I2C bus survives a failed panel probe, so on a retry only the
+     * panel needs rebuilding - creating the bus twice returns INVALID_STATE. */
+    if (s_bus != NULL) {
+        goto probe_panel;
+    }
+
     i2c_master_bus_config_t bus_cfg = {
         .i2c_port = I2C_NUM_0,
         .sda_io_num = PIN_I2C_SDA,
@@ -73,9 +99,10 @@ esp_err_t display_init(void)
         .glitch_ignore_cnt = 7,
         .flags.enable_internal_pullup = true,
     };
-    i2c_master_bus_handle_t bus = NULL;
-    ESP_RETURN_ON_ERROR(i2c_new_master_bus(&bus_cfg, &bus), TAG, "i2c bus");
+    ESP_RETURN_ON_ERROR(i2c_new_master_bus(&bus_cfg, &s_bus), TAG, "i2c bus");
 
+probe_panel: ;
+    quiet_lcd_logs(true);
     esp_lcd_panel_io_i2c_config_t io_cfg = {
         .dev_addr = OLED_I2C_ADDR,
         .scl_speed_hz = 400 * 1000,
@@ -85,7 +112,7 @@ esp_err_t display_init(void)
         .dc_bit_offset = 6,
     };
     esp_lcd_panel_io_handle_t io = NULL;
-    ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_i2c(bus, &io_cfg, &io), TAG, "panel io");
+    ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_i2c(s_bus, &io_cfg, &io), TAG, "panel io");
 
     esp_lcd_panel_ssd1306_config_t vendor_cfg = { .height = OLED_HEIGHT };
     esp_lcd_panel_dev_config_t panel_cfg = {
@@ -93,12 +120,29 @@ esp_err_t display_init(void)
         .reset_gpio_num = -1,          /* module ties RES high itself */
         .vendor_config = &vendor_cfg,
     };
-    ESP_RETURN_ON_ERROR(esp_lcd_new_panel_ssd1306(io, &panel_cfg, &s_panel), TAG, "panel");
+    esp_err_t err = esp_lcd_new_panel_ssd1306(io, &panel_cfg, &s_panel);
+    if (err == ESP_OK) {
+        err = esp_lcd_panel_reset(s_panel);
+    }
+    if (err == ESP_OK) {
+        err = esp_lcd_panel_init(s_panel);
+    }
+    if (err == ESP_OK) {
+        err = esp_lcd_panel_disp_on_off(s_panel, true);
+    }
+    if (err != ESP_OK) {
+        /* No panel on the bus - almost always "not wired up yet". Release
+         * the handles so a later retry starts clean. */
+        if (s_panel) {
+            esp_lcd_panel_del(s_panel);
+            s_panel = NULL;
+        }
+        esp_lcd_panel_io_del(io);
+        return err;
+    }
 
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(s_panel), TAG, "reset");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_init(s_panel), TAG, "init");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(s_panel, true), TAG, "on");
-
+    quiet_lcd_logs(false);
+    s_ready = true;
     display_clear();
     ESP_LOGI(TAG, "SSD1306 %dx%d up on SDA=%d SCL=%d addr=0x%02X",
              OLED_WIDTH, OLED_HEIGHT, PIN_I2C_SDA, PIN_I2C_SCL, OLED_I2C_ADDR);
@@ -107,6 +151,9 @@ esp_err_t display_init(void)
 
 esp_err_t display_flush(void)
 {
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;   /* drawing into the buffer is still fine */
+    }
     return esp_lcd_panel_draw_bitmap(s_panel, 0, 0, OLED_WIDTH, OLED_HEIGHT, s_fb);
 }
 

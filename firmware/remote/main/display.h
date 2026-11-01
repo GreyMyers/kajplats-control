@@ -11,7 +11,12 @@
 #include <stdint.h>
 #include "esp_err.h"
 
+/* Returns an error if no panel answers on the bus - which during bring-up
+ * usually just means it is not wired yet. Safe to call again later to retry;
+ * every other call in this header is a no-op until one succeeds. */
 esp_err_t display_init(void);
+
+bool display_ready(void);
 
 /* Push the framebuffer to the panel. */
 esp_err_t display_flush(void);
