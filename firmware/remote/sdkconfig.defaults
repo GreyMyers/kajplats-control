@@ -1,0 +1,6 @@
+# Logs and console over the C6's built-in USB port - one cable for flashing,
+# monitoring and power during bring-up.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# 1 kHz tick keeps the 20 ms keypad scan and the debounce timing honest.
+CONFIG_FREERTOS_HZ=1000

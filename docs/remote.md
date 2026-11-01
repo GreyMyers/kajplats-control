@@ -27,19 +27,41 @@ id. A border router *is* still needed for the one-time commissioning and ACL
 write — which is why the existing C6 stays an RCP and the remote is a second
 board.
 
-## What the knobs do
+## Controls
+
+A 12-key pad is 4x3 — `1-9`, `*`, `0`, `#`. There is no A-D row; that is a
+16-key 4x4 part. Nine keys therefore have to serve two continuous controls,
+so `#` switches which axis they act on and the screen shows which is live.
+
+| Key | Action |
+|---|---|
+| `1`-`9` | Nine steps on the active axis |
+| `#` | Switch axis: BRIGHT ↔ WHITE |
+| `*` | Toggle power |
+| `0` | Cycle target: BULB 1 → BULB 2 → BOTH |
+
+| Key | BRIGHT | WHITE |
+|---|---|---|
+| 1 | level 29 (11%) | 2202 K |
+| 5 | level 141 (55%) | 3289 K |
+| 9 | level 254 (100%) | 6535 K |
+
+Key 1 is deliberately dim rather than off — turning the bulbs off is what `*`
+is for.
+
+## What the axes do
 
 These are **white-spectrum (WS)** bulbs: `ColorCapabilities = 24`, hue/sat bit
 clear, device type `0x010C Color Temperature Light`. They have no hue.
 
-| Control | Cluster | Range |
+| Axis | Cluster | Range |
 |---|---|---|
-| Pot A — brightness | LevelControl `moveToLevelWithOnOff` | 1–254 |
-| Pot B — white temperature | ColorControl `moveToColorTemperature` | 454→153 mireds (2200–6500 K) |
-| Button | OnOff `toggle` | — |
+| BRIGHT | LevelControl `moveToLevelWithOnOff` | 1–254 |
+| WHITE | ColorControl `moveToColorTemperature` | 454→153 mireds (2202–6535 K) |
+| `*` | OnOff `toggle` | — |
 
-Pot B becomes a hue control unchanged if a colour-capable (CWS) bulb is ever
-added; only the mapping differs.
+The WHITE axis becomes a hue axis unchanged if a colour-capable (CWS) bulb is
+ever added; only the mapping differs.
 
 ## Pin assignment
 
