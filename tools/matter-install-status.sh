@@ -70,6 +70,36 @@ bold "size and space"
 printf '  esp-matter on disk     %s\n' "$(du -sh "$ESP_MATTER" 2>/dev/null | cut -f1)"
 printf '  free on /              %s\n' "$(df -h / | awk 'NR==2 {print $4}')"
 
+# The decisive liveness signal. Package counts only move during pip phases,
+# so they sit still for long stretches while compilation happens - which
+# reads as "stuck" when it is not. CPU time cannot sit still on a process
+# that is doing anything at all.
+bold "cpu burned since last check"
+CPUSTATE="${TMPDIR:-/tmp}/.matter-install-cpu.$UID"
+TICKS=0
+for p in $(pgrep -f 'install\.sh|ninja -C.*esp-matter|esp-matter.*python' 2>/dev/null); do
+    [[ -r /proc/$p/stat ]] && TICKS=$(( TICKS + $(awk '{print $14+$15}' /proc/$p/stat 2>/dev/null || echo 0) ))
+done
+NOW_S=$(date +%s)
+if [[ -f "$CPUSTATE" ]]; then
+    read -r PT PS_ < "$CPUSTATE"
+    DT=$(( NOW_S - PS_ ))
+    DC=$(( TICKS - PT ))
+    if (( DT <= 0 )); then
+        echo "  checked again too soon to measure - wait a few seconds"
+    else
+        if (( DC > 0 )); then
+            printf '  %s cpu-seconds over %ss  -> alive\n' \
+                   "$(awk -v d=$DC 'BEGIN{printf "%.1f", d/100}')" "$DT"
+        else
+            printf '  no cpu used over %ss  -> stalled or finished\n' "$DT"
+        fi
+    fi
+else
+    echo "  (first run - baseline recorded)"
+fi
+echo "$TICKS $NOW_S" > "$CPUSTATE"
+
 bold "last activity"
 NEWEST=$(find "$ENV" -type f -newermt '-6 hours' -printf '%T@ %p\n' 2>/dev/null \
          | sort -rn | head -1)
