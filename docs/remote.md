@@ -1,8 +1,14 @@
 # Handheld remote — design
 
-A battery-powered Seeed XIAO ESP32C6 with a 12-key pad that controls the
+A desk-mounted Seeed XIAO ESP32C6 with a 12-key pad that controls the
 KAJPLATS bulbs **directly over Thread**, with no hub, no laptop and no border
-router in the path.
+router in the command path.
+
+Mains powered from a 5 V adapter, not a battery. That decision removes most
+of the hard parts: no sleep modes, no wake-source constraints, and the device
+joins the mesh as a full **Thread Router** rather than a sleepy end device —
+faster to respond, more reliable, and it extends the mesh instead of
+depending on it.
 
 ## Why it works without a hub
 
@@ -108,18 +114,15 @@ D6=16 D7=17 D8=19 D9=20  D10=18
 
 ### Why the rows are wired out of order
 
-Deep-sleep wake needs LP/RTC-capable pins — GPIO0–7 on the C6 — and the XIAO
-exposes only GPIO0, GPIO1 and GPIO2 of those. Three of the four keypad rows
-can wake the chip; the fourth cannot.
+Historical, and no longer a constraint — but the wiring is built and working,
+so it stays. Deep-sleep wake needed LP/RTC-capable pins (GPIO0-7 on the C6),
+and the XIAO exposes only GPIO0-2 of those, so three of four rows could wake
+the chip and one could not. The `* 0 #` row therefore took a wake-capable pin
+and `7 8 9` took the one that could not.
 
-So the `* 0 #` row goes to a wake-capable pin and `7 8 9` takes the one that
-cannot. A remote whose power key will not wake it is a poor remote; losing
-wake on 7/8/9 is a much smaller cost. **Wire the pad's third and fourth rows
-swapped**, and confirm with the diagnostic below.
-
-For full coverage on all twelve keys, feed the four row lines into one spare
-LP pin through signal diodes (cathodes to the rows) and wake on that. Four
-diodes, only worth it if missing 7/8/9 turns out to annoy.
+Mains power made that moot. **Wire the pad's third and fourth rows swapped**
+to match `KEYPAD_ROW_PINS`, or renumber the table in `board.h` if you would
+rather wire them in printed order.
 
 ### Checking your wiring
 
@@ -137,38 +140,25 @@ ribbon pins are the rows.
 
 ## Power
 
-Switching from knobs to a keypad removed the worst problem in the original
-design. **A potentiometer is a permanent resistive load**: two 10 kΩ pots
-across 3V3 draw 660 µA forever, which is 15.8 mAh/day and only 27 days on a
-430 mAh cell — more than everything else in the design combined. Working
-around it needed the pots' top rail driven from a GPIO and energised only
-while sampling.
+A 5 V adapter into the XIAO's `5V` pad (or simply USB-C). The onboard
+regulator handles the rest — no external step-down, no LDO, no charger.
 
-A matrix keypad has no such load. Idle, the columns are released and the rows
-sit on their pull-ups with no path between them, so no current flows until a
-key is physically pressed, and then only ~73 µA through one 45 kΩ pull-up for
-as long as it is held.
+**Never feed 5 V to the `3V3` pad.** That bypasses the regulator and goes
+straight to the C6, whose absolute maximum is 3.6 V.
 
-Budget, assuming 20 uses/day at 10 s:
+### Why not a battery
 
-| Component | mAh/day |
-|---|---|
-| Awake: CPU + OLED + radio bursts, ~55 mA × 200 s | 3.1 |
-| Matter ICD idle (light sleep, 100–300 µA) | 2.4–7.2 |
-| Keypad | ~0 |
-| **Total** | **5.5–10.3 → 6–12 weeks** |
+A 430 mAh LiPo was the original plan and would have given roughly 62 days.
+It was dropped once the keypad became desk-mounted, because mains power is
+free of the three constraints that shaped the earlier design: sleep states,
+wake-capable pin placement, and LED frugality.
 
-### Things that destroy this
-
-* **A stock dev board's power LED** draws ~2 mA on its own: 48 mAh/day, nine
-  days, and all the sleep work is wasted. The XIAO is much better behaved
-  here — Seeed quote ~15 µA in deep sleep for the whole board — which is a
-  large part of why it suits this job.
-* **Wiring the cell to 3V3 directly.** A full LiPo is 4.2 V; the C6's maximum
-  is 3.6 V. The XIAO solves this on the board: it has battery pads with
-  charging and regulation built in, so the cell connects there, not to 3V3.
-* Battery voltage is readable on A0 (GPIO0) through a 1:2 divider — but GPIO0
-  is a keypad row here, so battery monitoring would need rethinking.
+A USB power bank is specifically a bad idea here even though the capacity
+looks adequate. Banks boost their 3.7 V cell to 5 V and you then drop it back
+to 3.3 V, so a 400 mAh bank yields ~36-48 days against the LiPo's 62 — but
+the real problem is that nearly all of them **auto-shut-off under low load**,
+typically below 50-100 mA. A device idling in microamps gets switched off
+within seconds of boot, every time.
 
 ## Interaction
 
@@ -216,6 +206,6 @@ discards out-of-range writes rather than complaining.
    Matter or power management.~~ **Done** — `firmware/remote`.
 4. Commission onto the fabric, write ACLs and bindings via matter-server's
    `write_attribute`.
-5. Add the ICD/sleep behaviour last — it makes everything harder to debug, so
-   it should go in once the rest is known-good.
-6. Battery, LDO, charger.
+5. ~~ICD/sleep behaviour.~~ **Dropped** — mains powered, so the device stays
+   awake and joins as a Thread Router.
+6. ~~Battery, LDO, charger.~~ **Dropped** — 5 V adapter into the `5V` pad.
